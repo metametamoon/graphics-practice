@@ -30,19 +30,35 @@ void glew_fail(std::string_view message, GLenum error)
 const char vertex_shader_source[] =
 R"(#version 330 core
 
-const vec2 VERTICES[3] = vec2[3](
-    vec2(0.0, 1.0),
-    vec2(-sqrt(0.75), -0.5),
-    vec2( sqrt(0.75), -0.5)
-);
+const float phi = 3.1415926f;
 
-const vec3 COLORS[3] = vec3[3](
+const vec2 VERTICES[6] = vec2[6](
+    vec2(1.0, 0.0),
+    vec2(1.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, 0.0),
+    vec2(-1.0, -1.0),
+    vec2(1.0, -1.0)
+
+);
+//    vec2(cos(1 * phi / 3) * 3, sin(1 * phi / 3)) * 3,
+//    vec2(cos(2 * phi / 3) * 3, sin(2 * phi / 3)) * 3,
+//    vec2(cos(3 * phi / 3) * 3, sin(3 * phi / 3)) * 3,
+//    vec2(cos(4 * phi / 3) * 3, sin(4 * phi / 3)) * 3,
+//    vec2(cos(5 * phi / 3) * 3, sin(5 * phi / 3)) * 3
+
+const vec3 COLORS[6] = vec3[6](
     vec3(1.0, 0.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0)
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0)
 );
 
 out vec3 color;
+uniform mat4 transform;
+uniform mat4 view;
 
 void main()
 {
@@ -51,6 +67,9 @@ void main()
     color = COLORS[gl_VertexID];
 }
 )";
+//    gl_Position.w = 1;
+//    gl_Position = view * transform * gl_Position;
+//    gl_Position = vec4(gl_Position.x * cos(angle) - gl_Position.y * sin(angle), gl_Position.x * sin(angle) + gl_Position.y * cos(angle), gl_Position.z, gl_Position.w);
 
 const char fragment_shader_source[] =
 R"(#version 330 core
@@ -113,7 +132,7 @@ int main() try
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         800, 600,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     if (!window)
         sdl2_fail("SDL_CreateWindow: ");
@@ -149,6 +168,12 @@ int main() try
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
     bool running = true;
+
+    glUseProgram(program);
+    GLint transform_loc = glGetUniformLocation(program, "transform");
+    GLint view_loc = glGetUniformLocation(program, "view");
+    float time = 0.0f;
+
     while (running)
     {
         for (SDL_Event event; SDL_PollEvent(&event);) switch (event.type)
@@ -170,17 +195,40 @@ int main() try
         if (!running)
             break;
 
+        float x = time / 20;
+        float y = -time / 80;
+
+        float transform[16] = {
+                std::cos(time), -std::sin(time), 0.0f, x,
+                std::sin(time), std::cos(time), 0.0f, y,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f
+        };
+        float aspect_ratio = width * 1.0f / height;
+        float view[16] = {
+                1 / aspect_ratio, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f,
+        };
+        glUniformMatrix4fv(transform_loc, 1, GL_TRUE, transform);
+        glUniformMatrix4fv(view_loc, 1, GL_TRUE, view);
+
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
         last_frame_start = now;
+//        time += dt;
+//        std::cout << dt << std::endl;
 
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(program);
         glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawArrays(GL_POLYGON, 0, 6);
 
         SDL_GL_SwapWindow(window);
+        SDL_GL_SetSwapInterval(0);
+
     }
 
     SDL_GL_DeleteContext(gl_context);
