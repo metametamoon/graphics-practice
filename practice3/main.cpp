@@ -130,7 +130,7 @@ std::vector<vertex> bezier_curve_from_vertices(std::vector<vertex> const & verti
     std::vector<vertex> bezier_vertices;
     int segment_count = vertices.size() - 1;
     for (int i = 0; i < segment_count * quality; ++i) {
-        float t = 1.0f * i / (segment_count * quality);
+        float t = 1.0f * i / (segment_count * quality - 1);
         vec2 next_point = bezier(vertices, t);
         bezier_vertices.push_back(vertex{next_point, {0, 255, 0, 0}});
     }
@@ -182,20 +182,20 @@ int main() try
     GLuint view_location = glGetUniformLocation(program, "view");
 
 
-    std::vector<vertex> vertices {
-            { vec2{1000.0f, 100.0f}, {255, 0, 0, 0}},
-            { vec2{100.0f, 1000.0f}, {0, 255, 0, 0}},
-            { vec2{100.0f, 100.0f}, {0, 0, 255, 0}}
-    };
+    std::vector<vertex> vertices {};
 
     std::vector<vertex> bezier_vertices;
 
-    GLuint vao;
+    GLuint vao_vertices;
+    GLuint vao_bezier;
     GLuint vbo_vertices;
     GLuint vbo_bezier;
 
 
     int quality = 4;
+
+    glGenVertexArrays(1, &vao_vertices);
+    glBindVertexArray(vao_vertices);
 
     glGenBuffers(1, &vbo_vertices);
     glGenBuffers(1, &vbo_bezier);
@@ -203,12 +203,19 @@ int main() try
     glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
 
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)0);
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex), (void*) offsetof(vertex, color));
+
+    glGenVertexArrays(1, &vao_bezier);
+    glBindVertexArray(vao_bezier);
+
     glBindBuffer(GL_ARRAY_BUFFER, vbo_bezier);
     bezier_vertices = bezier_curve_from_vertices(vertices, quality);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
 
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)0);
@@ -247,28 +254,35 @@ int main() try
                 vertices.push_back(vertex{vec2{1.0f * mouse_x, 1.0f * mouse_y}, {255, 0, 0, 0}});
                 glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices);
                 glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
-//                glBindBuffer(GL_ARRAY_BUFFER, vbo_bezier);
-//                int segment_count = vertices.size() - 1;
-//                for (int i = 0; i < segment_count * quality; ++i) {
-//                    float t = 1.0f * i / (segment_count * quality);
-//                    vec2 next_point = bezier(vertices, t);
-//                    bezier_vertices.push_back(vertex{next_point, {0, 255, 0, 0}});
-//                }
-//                glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
+                glBindBuffer(GL_ARRAY_BUFFER, vbo_bezier);
+                bezier_vertices = bezier_curve_from_vertices(vertices, quality);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
             }
             else if (event.button.button == SDL_BUTTON_RIGHT)
             {
-                vertices.pop_back();
+                if (!vertices.empty()) {
+                    vertices.pop_back();
+                    // do not update the old buffer because we dont actually change the data
+                    glBindBuffer(GL_ARRAY_BUFFER, vbo_bezier);
+                    bezier_vertices = bezier_curve_from_vertices(vertices, quality);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
+                }
             }
             break;
         case SDL_KEYDOWN:
             if (event.key.keysym.sym == SDLK_LEFT)
             {
-
+                if (quality > 1) {
+                    quality -= 1;
+                    bezier_vertices = bezier_curve_from_vertices(vertices, quality);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
+                }
             }
             else if (event.key.keysym.sym == SDLK_RIGHT)
             {
-
+                quality += 1;
+                bezier_vertices = bezier_curve_from_vertices(vertices, quality);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * bezier_vertices.size(), bezier_vertices.data(), GL_STATIC_DRAW);
             }
             break;
         }
@@ -292,13 +306,13 @@ int main() try
         };
 
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices);
+        glBindVertexArray(vao_vertices);
         glDrawArrays(GL_LINE_STRIP, 0, vertices.size());
         glPointSize(10.0f);
         glDrawArrays(GL_POINTS, 0, vertices.size());
 
-//        glBindBuffer(GL_ARRAY_BUFFER, vbo_bezier);
-//        glDrawArrays(GL_LINE_STRIP, 0, bezier_vertices.size());
+        glBindVertexArray(vao_bezier);
+        glDrawArrays(GL_LINE_STRIP, 0, bezier_vertices.size());
 
         glUseProgram(program);
         glUniformMatrix4fv(view_location, 1, GL_TRUE, view);
