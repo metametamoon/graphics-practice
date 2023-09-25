@@ -35,13 +35,16 @@ uniform mat4 view;
 
 layout (location = 0) in vec2 in_position;
 layout (location = 1) in vec4 in_color;
+layout (location = 2) in float in_dist;
 
 out vec4 color;
+out float dist;
 
 void main()
 {
     gl_Position = view * vec4(in_position, 0.0, 1.0);
     color = in_color;
+    dist = in_dist;
 }
 )";
 
@@ -49,12 +52,18 @@ const char fragment_shader_source[] =
 R"(#version 330 core
 
 in vec4 color;
+in float dist;
+uniform float time;
+uniform int dash;
 
 layout (location = 0) out vec4 out_color;
 
 void main()
 {
     out_color = color;
+    if (dash == 1 && mod(dist + time * 100, 40.0) < 20.0) {
+        discard;
+    }
 }
 )";
 
@@ -107,6 +116,7 @@ struct vertex
 {
     vec2 position;
     std::uint8_t color[4];
+    float distance_from_beginning = 0.0f;
 };
 
 vec2 bezier(std::vector<vertex> const & vertices, float t)
@@ -132,7 +142,13 @@ std::vector<vertex> bezier_curve_from_vertices(std::vector<vertex> const & verti
     for (int i = 0; i < segment_count * quality; ++i) {
         float t = 1.0f * i / (segment_count * quality - 1);
         vec2 next_point = bezier(vertices, t);
-        bezier_vertices.push_back(vertex{next_point, {0, 255, 0, 0}});
+        float distance = 0.0f;
+        if (i > 0) {
+            vertex const & vertex = bezier_vertices.back();
+            vec2 prev_point = vertex.position;
+            distance = std::hypot(prev_point.x - next_point.x, prev_point.y - next_point.y) + vertex.distance_from_beginning;
+        }
+        bezier_vertices.push_back(vertex{next_point, {0, 255, 0, 0}, distance});
     }
     return bezier_vertices;
 }
@@ -209,6 +225,9 @@ int main() try
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex), (void*) offsetof(vertex, color));
 
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*) offsetof(vertex, distance_from_beginning));
+
     glGenVertexArrays(1, &vao_bezier);
     glBindVertexArray(vao_bezier);
 
@@ -223,7 +242,12 @@ int main() try
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex), (void*) offsetof(vertex, color));
 
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*) offsetof(vertex, distance_from_beginning));
 
+
+    auto time_loc = glGetUniformLocation(program, "time");
+    auto dash_loc = glGetUniformLocation(program, "dash");
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -295,6 +319,7 @@ int main() try
         last_frame_start = now;
         time += dt;
 
+        glUniform1f(time_loc, time);
         glClear(GL_COLOR_BUFFER_BIT);
 
         float view[16] =
@@ -306,11 +331,14 @@ int main() try
         };
 
 
+        glUniform1i(dash_loc, 0);
         glBindVertexArray(vao_vertices);
         glDrawArrays(GL_LINE_STRIP, 0, vertices.size());
         glPointSize(10.0f);
         glDrawArrays(GL_POINTS, 0, vertices.size());
 
+
+        glUniform1i(dash_loc, 1);
         glBindVertexArray(vao_bezier);
         glDrawArrays(GL_LINE_STRIP, 0, bezier_vertices.size());
 
