@@ -203,8 +203,8 @@ int main() try
 
     int size = 512;
     std::vector<std::uint32_t> pixels(size * size);
-    for (int i = 0; i < std::ssize(pixels); ++i) {
-        if (i % 2 == 0) {
+    for (int i = 0; i < size * size; ++i) {
+        if ((i + i / size) % 2 == 0) {
             pixels[i] = 0xFF000000u;
         } else {
             pixels[i] = 0xFFFFFFFFu;
