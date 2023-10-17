@@ -41,13 +41,16 @@ uniform mat4 projection;
 
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec2 in_texcoord;
 
 out vec3 normal;
+out vec2 texcoord;
 
 void main()
 {
     gl_Position = projection * viewmodel * vec4(in_position, 1.0);
     normal = mat3(viewmodel) * in_normal;
+    texcoord = in_texcoord;
 }
 )";
 
@@ -55,13 +58,17 @@ const char fragment_shader_source[] =
 R"(#version 330 core
 
 in vec3 normal;
+in vec2 texcoord;
+
+uniform sampler2D myTextureSampler;
+uniform vec2 offset;
 
 layout (location = 0) out vec4 out_color;
 
 void main()
 {
     float lightness = 0.5 + 0.5 * dot(normalize(normal), normalize(vec3(1.0, 2.0, 3.0)));
-    vec3 albedo = vec3(1.0);
+    vec3 albedo = texture(myTextureSampler, texcoord + offset).rgb;
     out_color = vec4(lightness * albedo, 1.0);
 }
 )";
@@ -165,6 +172,74 @@ int main() try
 
     std::map<SDL_Keycode, bool> button_down;
 
+    GLuint vao;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+
+
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, cow.vertices.size() * sizeof(obj_data::vertex), cow.vertices.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(obj_data::vertex), (void *) offsetof(obj_data::vertex, position));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, false, sizeof(obj_data::vertex), (void *) offsetof(obj_data::vertex, normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(obj_data::vertex), (void *) offsetof(obj_data::vertex, texcoord));
+
+    GLuint ebo;
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, cow.indices.size() * sizeof(std::uint32_t), cow.indices.data(), GL_STATIC_DRAW);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+
+    int size = 512;
+    std::vector<std::uint32_t> pixels(size * size);
+    for (int i = 0; i < size * size; ++i) {
+        if ((i + i / size) % 2 == 0) {
+            pixels[i] = 0xFF000000u;
+        } else {
+            pixels[i] = 0xFFFFFFFFu;
+        }
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    std::vector<std::uint32_t> first_mipmap(size * size / 4, 0x000000ff);
+    glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, size / 2, size / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, first_mipmap.data());
+
+    std::vector<std::uint32_t> second_mipmap(size * size / 16, 0x0000ff00);
+    glTexImage2D(GL_TEXTURE_2D, 2, GL_RGBA8, size / 4, size / 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, second_mipmap.data());
+
+    std::vector<std::uint32_t> third_mipmap(size * size / (8 * 8), 0x00ff0000);
+    glTexImage2D(GL_TEXTURE_2D, 3, GL_RGBA8, size / 8, size / 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, third_mipmap.data());
+
+
+
+    GLuint cow_texture;
+    glGenTextures(1, &cow_texture);
+    glBindTexture(GL_TEXTURE_2D, cow_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+    int x=0, y=0;
+    unsigned char* data = stbi_load(cow_texture_path.data(), &x, &y, nullptr, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    GLuint sampler_location = glGetUniformLocation(program, "myTextureSampler");
+
+    GLuint offset_location = glGetUniformLocation(program, "offset");
+
     bool running = true;
     while (running)
     {
@@ -198,6 +273,7 @@ int main() try
         last_frame_start = now;
         time += dt;
 
+        glUniform2f(offset_location, 0.0, time / 10);
         if (button_down[SDLK_UP]) offset_z -= 4.f * dt;
         if (button_down[SDLK_DOWN]) offset_z += 4.f * dt;
         if (button_down[SDLK_LEFT]) angle_y += 4.f * dt;
@@ -231,6 +307,11 @@ int main() try
         glUniformMatrix4fv(viewmodel_location, 1, GL_TRUE, viewmodel);
         glUniformMatrix4fv(projection_location, 1, GL_TRUE, projection);
 
+        glUniform1i(sampler_location, 1);
+        glActiveTexture(GL_TEXTURE0 + 1);
+        glBindTexture(GL_TEXTURE_2D, cow_texture);
+
+        glDrawElements(GL_TRIANGLES, cow.indices.size(), GL_UNSIGNED_INT, (void*)0);
         SDL_GL_SwapWindow(window);
     }
 
