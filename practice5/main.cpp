@@ -199,7 +199,7 @@ int main() try
     glBindTexture(GL_TEXTURE_2D, texture);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
 
     int size = 512;
     std::vector<std::uint32_t> pixels(size * size);
@@ -211,6 +211,17 @@ int main() try
         }
     }
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    std::vector<std::uint32_t> first_mipmap(size * size / 4, 0x000000ff);
+    glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, size / 2, size / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, first_mipmap.data());
+
+    std::vector<std::uint32_t> second_mipmap(size * size / 16, 0x0000ff00);
+    glTexImage2D(GL_TEXTURE_2D, 2, GL_RGBA8, size / 4, size / 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, second_mipmap.data());
+
+    std::vector<std::uint32_t> third_mipmap(size * size / (8 * 8), 0x00ff0000);
+    glTexImage2D(GL_TEXTURE_2D, 3, GL_RGBA8, size / 8, size / 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, third_mipmap.data());
+
 
     GLuint sampler_location = glGetUniformLocation(program, "myTextureSampler");
     bool running = true;
