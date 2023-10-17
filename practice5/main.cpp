@@ -61,13 +61,14 @@ in vec3 normal;
 in vec2 texcoord;
 
 uniform sampler2D myTextureSampler;
+uniform vec2 offset;
 
 layout (location = 0) out vec4 out_color;
 
 void main()
 {
     float lightness = 0.5 + 0.5 * dot(normalize(normal), normalize(vec3(1.0, 2.0, 3.0)));
-    vec3 albedo = texture(myTextureSampler, texcoord).rgb;
+    vec3 albedo = texture(myTextureSampler, texcoord + offset).rgb;
     out_color = vec4(lightness * albedo, 1.0);
 }
 )";
@@ -237,6 +238,8 @@ int main() try
 
     GLuint sampler_location = glGetUniformLocation(program, "myTextureSampler");
 
+    GLuint offset_location = glGetUniformLocation(program, "offset");
+
     bool running = true;
     while (running)
     {
@@ -270,6 +273,7 @@ int main() try
         last_frame_start = now;
         time += dt;
 
+        glUniform2f(offset_location, 0.0, time / 10);
         if (button_down[SDLK_UP]) offset_z -= 4.f * dt;
         if (button_down[SDLK_DOWN]) offset_z += 4.f * dt;
         if (button_down[SDLK_LEFT]) angle_y += 4.f * dt;
