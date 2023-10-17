@@ -223,7 +223,20 @@ int main() try
     glTexImage2D(GL_TEXTURE_2D, 3, GL_RGBA8, size / 8, size / 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, third_mipmap.data());
 
 
+
+    GLuint cow_texture;
+    glGenTextures(1, &cow_texture);
+    glBindTexture(GL_TEXTURE_2D, cow_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+    int x=0, y=0;
+    unsigned char* data = stbi_load(cow_texture_path.data(), &x, &y, nullptr, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
     GLuint sampler_location = glGetUniformLocation(program, "myTextureSampler");
+
     bool running = true;
     while (running)
     {
@@ -290,9 +303,9 @@ int main() try
         glUniformMatrix4fv(viewmodel_location, 1, GL_TRUE, viewmodel);
         glUniformMatrix4fv(projection_location, 1, GL_TRUE, projection);
 
-        glUniform1i(sampler_location, 0);
-        glActiveTexture(GL_TEXTURE0 + 0);
-        glBindTexture(GL_TEXTURE_2D, texture);
+        glUniform1i(sampler_location, 1);
+        glActiveTexture(GL_TEXTURE0 + 1);
+        glBindTexture(GL_TEXTURE_2D, cow_texture);
 
         glDrawElements(GL_TRIANGLES, cow.indices.size(), GL_UNSIGNED_INT, (void*)0);
         SDL_GL_SwapWindow(window);
