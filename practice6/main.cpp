@@ -387,7 +387,15 @@ int main() try
             glm::mat4 projection = glm::perspective(glm::pi<float>() / 2.f, (1.f * width) / height, near, far);
 
             if (i > 0) {
-                projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f);
+                float scale = 0.5f;
+                projection = glm::ortho(-1.0f * width / height * scale, 1.0f * width / height * scale, -1.0f * scale, 1.0f * scale);
+                if (i == 1) {
+                    view = glm::rotate(view, glm::pi<float>() / 2.f, {0.f, 1.f, 0.f});
+                } else if (i == 2) {
+                    view = glm::rotate(view, glm::pi<float>() / 2.f, {1.f, 0.f, 0.f});
+                } else if (i == 3) {
+                    view = glm::rotate(view, glm::pi<float>() / 2.f, {0.f, 0.f, 1.f});
+                }
             }
 
             glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
