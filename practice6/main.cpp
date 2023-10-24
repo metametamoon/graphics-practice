@@ -120,12 +120,14 @@ const char rectangle_fragment_shader_source[] =
 R"(#version 330 core
 
 in vec2 texcoord;
+uniform sampler2D render_result;
 
 layout (location = 0) out vec4 out_color;
 
 void main()
 {
-    out_color = vec4(texcoord, 0.0, 1.0);
+    vec3 albedo = texture(render_result, texcoord).rgb;
+    out_color = vec4(albedo, 1);
 }
 )";
 
@@ -266,6 +268,11 @@ int main() try
 
     GLuint center_location = glGetUniformLocation(rectangle_program, "center");
     GLuint size_location = glGetUniformLocation(rectangle_program, "size");
+    GLuint render_result_location = glGetUniformLocation(rectangle_program, "render_result");
+
+    glUniform1i(render_result_location, 0);
+    glActiveTexture(GL_TEXTURE0 + 0);
+    glBindTexture(GL_TEXTURE_2D, texture);
 
     GLuint rectangle_vao;
     glGenVertexArrays(1, &rectangle_vao);
