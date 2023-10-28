@@ -76,6 +76,11 @@ uniform vec3 ambient_light;
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
 
+
+uniform vec3 point_light_position;
+uniform vec3 point_light_color;
+uniform vec3 point_light_attenuation;
+
 in vec3 position;
 in vec3 normal;
 
@@ -88,7 +93,10 @@ vec3 diffuse(vec3 direction) {
 void main()
 {
     vec3 ambient = albedo * ambient_light;
-    vec3 color = ambient + sun_color * diffuse(sun_direction);
+    vec3 to_point_light = position - point_light_position;
+    float dist = distance(position, point_light_position);
+    vec3 point_color = diffuse(to_point_light) * point_light_color;
+    vec3 color = ambient + sun_color * diffuse(sun_direction) + (point_color / dist);
     out_color = vec4(color, 1.0);
 }
 )";
@@ -214,6 +222,10 @@ int main() try {
     GLuint sun_direction_loc = glGetUniformLocation(program, "sun_direction");
     GLuint sun_color_loc = glGetUniformLocation(program, "sun_color");
 
+    GLuint point_light_position_loc = glGetUniformLocation(program, "point_light_position");
+    GLuint point_light_color_loc = glGetUniformLocation(program, "point_light_color");
+    GLuint point_light_attenuation_loc = glGetUniformLocation(program, "point_light_attenuation");
+
 
     bool running = true;
     while (running) {
@@ -294,6 +306,9 @@ int main() try {
         glUniform3fv(camera_position_location, 1, (float *) (&camera_position));
         glUniform3f(albedo_location, 0.7f, 0.4f, 0.2f);
         glUniform3f(ambient_light_location, 0.2f, 0.2f, 0.2f);
+        glUniform3f(point_light_position_loc, -1.0f + time / 5, 1.0f, 1.0f);
+        glUniform3f(point_light_color_loc, 0.0, 1.0, 0.0);
+        glUniform3f(point_light_attenuation_loc, 0.0, 1.0, 0.0);
 
         glBindVertexArray(suzanne_vao);
         glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
