@@ -96,16 +96,19 @@ vec3 diffuse(vec3 direction) {
 }
 
 vec3 specular(vec3 direction) {
-    return glossiness * albedo * pow(max(0, dot(normal, direction)), 5.0);
+    float power = 1 / (roughness * roughness) - 1;
+    vec3 result = glossiness * albedo * pow(max(0, dot(normal, direction)), power);
+    return clamp(result, vec3(0.0, 0.0, 0.0), vec3(1.0f, 1.0f, 1.0f));
 }
 
 void main()
 {
     vec3 ambient = albedo * ambient_light;
     vec3 to_point_light = position - point_light_position;
-    float dist = pow(distance(position, point_light_position), 2);
+    float dist = distance(position, point_light_position);
+    float attenuation = 1 / (dist * dist);
     vec3 point_color = (diffuse(to_point_light) + specular(to_point_light)) * point_light_color;
-    vec3 color = ambient + sun_color * (diffuse(sun_direction) + specular(sun_direction)) + (point_color / dist);
+    vec3 color = ambient + sun_color * (diffuse(sun_direction) + specular(sun_direction)) + attenuation * point_color;
     out_color = vec4(color, 0.5);
 }
 )";
@@ -299,9 +302,9 @@ int main() try {
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 model(1.f);
+        glm::mat4 model(1.0f);
 
-        glm::mat4 view(1.f);
+        glm::mat4 view(2.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
         view = glm::rotate(view, camera_angle, {0.f, 1.f, 0.f});
         view = glm::translate(view, {-camera_x, 0.f, 0.f});
@@ -323,7 +326,8 @@ int main() try {
         glUniform3f(point_light_position_loc, -1.0f + time / 5, 1.0f, 1.0f);
         glUniform3f(point_light_color_loc, 0.0, 1.0, 0.0);
         glUniform3f(point_light_attenuation_loc, 0.0, 1.0, 0.0);
-        glUniform1f(glossiness_loc, 5.0f);
+        glUniform1f(glossiness_loc, 3.0f);
+        glUniform1f(roughness_loc, 0.2f);
 
         if (transparent) {
             glEnable(GL_BLEND);
@@ -333,6 +337,14 @@ int main() try {
             glDisable(GL_BLEND);
         }
         glBindVertexArray(suzanne_vao);
+        glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        glm::mat4 new_view(2.f);
+        new_view = glm::translate(new_view, {1.f, 0.f, -camera_distance});
+        new_view = glm::rotate(new_view, camera_angle, {0.f, 1.f, 0.f});
+        new_view = glm::translate(new_view, {-camera_x, 0.f, 0.f});
+        glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&new_view));
+        glUniform1f(roughness_loc, 0.5);
         glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
 
         SDL_GL_SwapWindow(window);
