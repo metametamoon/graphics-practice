@@ -73,15 +73,22 @@ uniform vec3 albedo;
 
 uniform vec3 ambient_light;
 
+uniform vec3 sun_direction;
+uniform vec3 sun_color;
+
 in vec3 position;
 in vec3 normal;
 
 layout (location = 0) out vec4 out_color;
 
+vec3 diffuse(vec3 direction) {
+    return albedo * max(0.0, dot(normal, direction));
+}
+
 void main()
 {
     vec3 ambient = albedo * ambient_light;
-    vec3 color = ambient;
+    vec3 color = ambient + sun_color * diffuse(sun_direction);
     out_color = vec4(color, 1.0);
 }
 )";
@@ -204,6 +211,10 @@ int main() try {
     float camera_x = 0.f;
     float camera_angle = 0.f;
 
+    GLuint sun_direction_loc = glGetUniformLocation(program, "sun_direction");
+    GLuint sun_color_loc = glGetUniformLocation(program, "sun_color");
+
+
     bool running = true;
     while (running) {
         for (SDL_Event event; SDL_PollEvent(&event);)
@@ -275,6 +286,8 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
         glUseProgram(program);
+        glUniform3f(sun_direction_loc, 0.0f, .8f, .4f); // not-unit, but it's ok
+        glUniform3f(sun_color_loc, 1.0f, 0.9f, 0.8f);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
