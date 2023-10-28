@@ -81,6 +81,11 @@ uniform vec3 point_light_position;
 uniform vec3 point_light_color;
 uniform vec3 point_light_attenuation;
 
+
+uniform float glossiness;
+uniform float roughness;
+
+
 in vec3 position;
 in vec3 normal;
 
@@ -90,14 +95,18 @@ vec3 diffuse(vec3 direction) {
     return albedo * max(0.0, dot(normal, direction));
 }
 
+vec3 specular(vec3 direction) {
+    return glossiness * albedo * pow(max(0, dot(normal, direction)), 5.0);
+}
+
 void main()
 {
     vec3 ambient = albedo * ambient_light;
     vec3 to_point_light = position - point_light_position;
-    float dist = distance(position, point_light_position);
-    vec3 point_color = diffuse(to_point_light) * point_light_color;
-    vec3 color = ambient + sun_color * diffuse(sun_direction) + (point_color / dist);
-    out_color = vec4(color, 1.0);
+    float dist = pow(distance(position, point_light_position), 2);
+    vec3 point_color = (diffuse(to_point_light) + specular(to_point_light)) * point_light_color;
+    vec3 color = ambient + sun_color * (diffuse(sun_direction) + specular(sun_direction)) + (point_color / dist);
+    out_color = vec4(color, 0.5);
 }
 )";
 
@@ -226,6 +235,11 @@ int main() try {
     GLuint point_light_color_loc = glGetUniformLocation(program, "point_light_color");
     GLuint point_light_attenuation_loc = glGetUniformLocation(program, "point_light_attenuation");
 
+    GLuint glossiness_loc = glGetUniformLocation(program, "glossiness");
+    GLuint roughness_loc = glGetUniformLocation(program, "roughness");
+
+
+
 
     bool running = true;
     while (running) {
@@ -298,7 +312,7 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
         glUseProgram(program);
-        glUniform3f(sun_direction_loc, 0.0f, .8f, .4f); // not-unit, but it's ok
+        glUniform3f(sun_direction_loc, 0.0f, 0.8944271909999159f, 0.4472135954999579f); // not-unit, but it's ok
         glUniform3f(sun_color_loc, 1.0f, 0.9f, 0.8f);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
@@ -309,7 +323,15 @@ int main() try {
         glUniform3f(point_light_position_loc, -1.0f + time / 5, 1.0f, 1.0f);
         glUniform3f(point_light_color_loc, 0.0, 1.0, 0.0);
         glUniform3f(point_light_attenuation_loc, 0.0, 1.0, 0.0);
+        glUniform1f(glossiness_loc, 5.0f);
 
+        if (transparent) {
+            glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
         glBindVertexArray(suzanne_vao);
         glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
 
