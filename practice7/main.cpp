@@ -302,7 +302,7 @@ int main() try {
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 model(1.0f);
+        glm::mat4 model(0.4f);
 
         glm::mat4 view(2.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
@@ -339,13 +339,20 @@ int main() try {
         glBindVertexArray(suzanne_vao);
         glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
 
-        glm::mat4 new_view(2.f);
-        new_view = glm::translate(new_view, {1.f, 0.f, -camera_distance});
-        new_view = glm::rotate(new_view, camera_angle, {0.f, 1.f, 0.f});
-        new_view = glm::translate(new_view, {-camera_x, 0.f, 0.f});
-        glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&new_view));
-        glUniform1f(roughness_loc, 0.5);
-        glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
+        float step_x = 1.5;
+        float step_y = 1.1;
+        for (float x = -step_x; x < step_x * 1.5f; x += step_x) {
+            for (float y = -step_y; y < step_y * 1.5f; y += step_y) {
+                glm::mat4 new_view(2.f);
+                new_view = glm::translate(new_view, {x, y, -camera_distance});
+                new_view = glm::rotate(new_view, camera_angle, {0.f, 1.f, 0.f});
+                new_view = glm::translate(new_view, {-camera_x, 0.f, 0.f});
+                glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&new_view));
+                glUniform1f(roughness_loc, 0.1 + (x + y + step_x + step_y) / (step_x + step_y + 5));
+                glUniform1f(glossiness_loc, x / step_x + y / step_y + 3);
+                glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
+            }
+        }
 
         SDL_GL_SwapWindow(window);
     }
