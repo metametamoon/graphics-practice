@@ -73,16 +73,43 @@ uniform vec3 albedo;
 
 uniform vec3 ambient_light;
 
+uniform vec3 sun_direction;
+uniform vec3 sun_color;
+
+
+uniform vec3 point_light_position;
+uniform vec3 point_light_color;
+uniform vec3 point_light_attenuation;
+
+
+uniform float glossiness;
+uniform float roughness;
+
+
 in vec3 position;
 in vec3 normal;
 
 layout (location = 0) out vec4 out_color;
 
+vec3 diffuse(vec3 direction) {
+    return albedo * max(0.0, dot(normal, direction));
+}
+
+vec3 specular(vec3 direction) {
+    float power = 1 / (roughness * roughness) - 1;
+    vec3 result = glossiness * albedo * pow(max(0, dot(normal, direction)), power);
+    return clamp(result, vec3(0.0, 0.0, 0.0), vec3(1.0f, 1.0f, 1.0f));
+}
+
 void main()
 {
     vec3 ambient = albedo * ambient_light;
-    vec3 color = ambient;
-    out_color = vec4(color, 1.0);
+    vec3 to_point_light = position - point_light_position;
+    float dist = distance(position, point_light_position);
+    float attenuation = 1 / (dist * dist);
+    vec3 point_color = (diffuse(to_point_light) + specular(to_point_light)) * point_light_color;
+    vec3 color = ambient + sun_color * (diffuse(sun_direction) + specular(sun_direction)) + attenuation * point_color;
+    out_color = vec4(color, 0.5);
 }
 )";
 
@@ -204,6 +231,19 @@ int main() try {
     float camera_x = 0.f;
     float camera_angle = 0.f;
 
+    GLuint sun_direction_loc = glGetUniformLocation(program, "sun_direction");
+    GLuint sun_color_loc = glGetUniformLocation(program, "sun_color");
+
+    GLuint point_light_position_loc = glGetUniformLocation(program, "point_light_position");
+    GLuint point_light_color_loc = glGetUniformLocation(program, "point_light_color");
+    GLuint point_light_attenuation_loc = glGetUniformLocation(program, "point_light_attenuation");
+
+    GLuint glossiness_loc = glGetUniformLocation(program, "glossiness");
+    GLuint roughness_loc = glGetUniformLocation(program, "roughness");
+
+
+
+
     bool running = true;
     while (running) {
         for (SDL_Event event; SDL_PollEvent(&event);)
@@ -262,9 +302,9 @@ int main() try {
         float near = 0.1f;
         float far = 100.f;
 
-        glm::mat4 model(1.f);
+        glm::mat4 model(0.4f);
 
-        glm::mat4 view(1.f);
+        glm::mat4 view(2.f);
         view = glm::translate(view, {0.f, 0.f, -camera_distance});
         view = glm::rotate(view, camera_angle, {0.f, 1.f, 0.f});
         view = glm::translate(view, {-camera_x, 0.f, 0.f});
@@ -275,15 +315,44 @@ int main() try {
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
         glUseProgram(program);
+        glUniform3f(sun_direction_loc, 0.0f, 0.8944271909999159f, 0.4472135954999579f); // not-unit, but it's ok
+        glUniform3f(sun_color_loc, 1.0f, 0.9f, 0.8f);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(camera_position_location, 1, (float *) (&camera_position));
         glUniform3f(albedo_location, 0.7f, 0.4f, 0.2f);
         glUniform3f(ambient_light_location, 0.2f, 0.2f, 0.2f);
+        glUniform3f(point_light_position_loc, -1.0f + time / 5, 1.0f, 1.0f);
+        glUniform3f(point_light_color_loc, 0.0, 1.0, 0.0);
+        glUniform3f(point_light_attenuation_loc, 0.0, 1.0, 0.0);
+        glUniform1f(glossiness_loc, 3.0f);
+        glUniform1f(roughness_loc, 0.2f);
 
+        if (transparent) {
+            glEnable(GL_BLEND);
+            glBlendEquation(GL_FUNC_ADD);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
         glBindVertexArray(suzanne_vao);
         glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        float step_x = 1.5;
+        float step_y = 1.1;
+        for (float x = -step_x; x < step_x * 1.5f; x += step_x) {
+            for (float y = -step_y; y < step_y * 1.5f; y += step_y) {
+                glm::mat4 new_view(2.f);
+                new_view = glm::translate(new_view, {x, y, -camera_distance});
+                new_view = glm::rotate(new_view, camera_angle, {0.f, 1.f, 0.f});
+                new_view = glm::translate(new_view, {-camera_x, 0.f, 0.f});
+                glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&new_view));
+                glUniform1f(roughness_loc, 0.1 + (x + y + step_x + step_y) / (step_x + step_y + 5));
+                glUniform1f(glossiness_loc, x / step_x + y / step_y + 3);
+                glDrawElements(GL_TRIANGLES, suzanne.indices.size(), GL_UNSIGNED_INT, nullptr);
+            }
+        }
 
         SDL_GL_SwapWindow(window);
     }
