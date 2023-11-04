@@ -105,6 +105,64 @@ void main()
 }
 )";
 
+const char debug_fragment_shader_source[] =
+        R"(#version 330 core
+
+layout (location = 0) out vec4 out_color;
+
+in vec2 texcoord;
+uniform sampler2D shadow_map;
+
+void main()
+{
+    out_color = texture(shadow_map, texcoord);
+}
+)";
+
+const char debug_vertex_shader_source[] =
+        R"(#version 330 core
+
+const vec2 VERTICES[6] = vec2[6](
+    vec2(-1.0, -1.0),
+    vec2(-0.5, -1.0),
+    vec2(-0.5, -0.5),
+    vec2(-1.0, -1.0),
+    vec2(-0.5, -0.5),
+    vec2(-1.0, -0.5)
+);
+
+out vec2 texcoord;
+
+void main()
+{
+    gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+    texcoord = (VERTICES[gl_VertexID] + vec2(1.0, 1.0)) * 2;
+}
+)";
+
+const char shadow_map_fragment_shader_source[] =
+        R"(#version 330 core
+void main()
+{
+}
+)";
+
+const char shadow_map_vertex_shader_source[] =
+        R"(#version 330 core
+
+uniform mat4 shadow_projection;
+uniform mat4 model;
+
+layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec3 in_normal;
+
+void main()
+{
+    gl_Position = shadow_projection * model * vec4(in_position, 1.0);
+}
+)";
+
+
 GLuint create_shader(GLenum type, const char *source)
 {
     GLuint result = glCreateShader(type);
@@ -187,6 +245,28 @@ try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
+    auto debug_vertex_shader = create_shader(GL_VERTEX_SHADER, debug_vertex_shader_source);
+    auto debug_fragment_shader = create_shader(GL_FRAGMENT_SHADER, debug_fragment_shader_source);
+    auto debug_program = create_program(debug_vertex_shader, debug_fragment_shader);
+    GLuint debug_vao;
+    glCreateVertexArrays(1, &debug_vao);
+
+    auto shadow_map_vertex_shader = create_shader(GL_VERTEX_SHADER, shadow_map_vertex_shader_source);
+    auto shadow_map_fragment_shader = create_shader(GL_FRAGMENT_SHADER, shadow_map_fragment_shader_source);
+    auto shadow_map_program = create_program(shadow_map_vertex_shader, shadow_map_fragment_shader);
+    GLuint shadow_map_vao;
+    glGenVertexArrays(1, &shadow_map_vao);
+
+    auto light_Z = glm::vec3(0, -1, 0);
+    auto light_X = glm::vec3(1, 0, 0);
+    auto light_Y = glm::cross(light_X, light_Z);
+
+    auto shadow_projection =  glm::mat4(glm::transpose(glm::mat3(light_X, light_Y, light_Z)));
+
+    GLuint shadow_model_location = glGetUniformLocation(shadow_map_program, "model");
+    GLuint shadow_projection_location = glGetUniformLocation(shadow_map_program, "shadow_projection");
+
+
     GLuint model_location = glGetUniformLocation(program, "model");
     GLuint view_location = glGetUniformLocation(program, "view");
     GLuint projection_location = glGetUniformLocation(program, "projection");
@@ -215,6 +295,32 @@ try
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(obj_data::vertex), (void *)(0));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(obj_data::vertex), (void *)(12));
+
+
+    int shadow_map_size = 1024;
+    GLuint shadow_map_texture;
+    glGenTextures(1, &shadow_map_texture);
+    glBindTexture(GL_TEXTURE_2D, shadow_map_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_DEPTH_COMPONENT24,
+                 shadow_map_size,
+                 shadow_map_size,
+                 0,
+                 GL_DEPTH_COMPONENT,
+                 GL_FLOAT,
+                 nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_map_texture, 0);
+    assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+//    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -254,6 +360,7 @@ try
         if (!running)
             break;
 
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
         last_frame_start = now;
@@ -306,6 +413,23 @@ try
 
         glBindVertexArray(scene_vao);
         glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        // drawing shadow map
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        glUseProgram(shadow_map_program);
+        glViewport(0, 0, shadow_map_size, shadow_map_size);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST); // might be wrong; if something does not work -- recheck!
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
+        glBindVertexArray(scene_vao);
+        glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glUseProgram(debug_program);
+        glBindVertexArray(debug_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
 
         SDL_GL_SwapWindow(window);
     }
