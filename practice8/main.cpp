@@ -273,11 +273,6 @@ try
     GLuint shadow_map_vao;
     glGenVertexArrays(1, &shadow_map_vao);
 
-    auto light_Z = glm::vec3(0, -1, 0);
-    auto light_X = glm::vec3(1, 0, 0);
-    auto light_Y = glm::cross(light_X, light_Z);
-
-    auto shadow_projection =  glm::mat4(glm::transpose(glm::mat3(light_X, light_Y, light_Z)));
 
     GLuint shadow_model_location = glGetUniformLocation(shadow_map_program, "model");
     GLuint shadow_projection_location = glGetUniformLocation(shadow_map_program, "shadow_projection");
@@ -418,6 +413,13 @@ try
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
         glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
+
+        auto light_Z = -sun_direction;
+        auto light_X = glm::vec3(-light_Z.y, light_Z.x, 0.0);
+        auto light_Y = glm::cross(light_X, light_Z);
+
+        auto shadow_projection =  glm::mat4(glm::transpose(glm::mat3(light_X, light_Y, light_Z)));
+
 
         // drawing shadow map
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
