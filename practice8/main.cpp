@@ -77,7 +77,7 @@ uniform vec3 albedo;
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
 uniform mat4 shadow_projection;
-uniform sampler2D shadow_map;
+uniform sampler2DShadow shadow_map;
 
 in vec3 position;
 in vec3 normal;
@@ -104,15 +104,21 @@ void main()
     float ambient_light = 0.2;
     vec4 ndc = shadow_projection * vec4(position, 1.0);
     if (-1 <= ndc.x && ndc.x <= 1 && -1 <= ndc.y && ndc.y <= 1) {
-        vec2 shadow_coord = ndc.xy * 0.5 + vec2(0.5);
-        float shadow_depth = ndc.z * 0.5 + 0.5;
-        if (texture(shadow_map, shadow_coord).r < shadow_depth) {
-            vec3 color = albedo * ambient_light;
-            out_color = vec4(color, 1.0);
-        } else {
-            vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
-            out_color = vec4(color, 1.0);
+        vec4 sum = vec4(0.0);
+        float sum_w = 0.0;
+        const int N = 7;
+        float radius = 5.0;
+        for (int x = -N; x <= N; ++x) {
+            for (int y = -N; y <= N; ++y) {
+                float c = exp(-float(x * x + y * y) / (radius * radius));
+                sum += c * texture(render_result, texcoord + vec2(x, y) / vec2(textureSize(render_result, 0)));
+                sum_w += c;
+            }
         }
+        float in_light = texture(shadow_map, vec3(ndc * 0.5 + vec4(0.5)));
+
+        vec3 color = albedo * ambient_light + sun_color * phong(sun_direction) * in_light;
+        out_color = vec4(color, 1.0);
     } else {
         vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
         out_color = vec4(color, 1.0);
@@ -314,8 +320,10 @@ try
     GLuint shadow_map_texture;
     glGenTextures(1, &shadow_map_texture);
     glBindTexture(GL_TEXTURE_2D, shadow_map_texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
     glTexImage2D(GL_TEXTURE_2D,
                  0,
                  GL_DEPTH_COMPONENT24,
