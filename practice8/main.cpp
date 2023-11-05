@@ -76,6 +76,8 @@ uniform vec3 albedo;
 
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
+uniform mat4 shadow_projection;
+uniform sampler2D shadow_map;
 
 in vec3 position;
 in vec3 normal;
@@ -100,8 +102,22 @@ vec3 phong(vec3 direction) {
 void main()
 {
     float ambient_light = 0.2;
-    vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
-    out_color = vec4(color, 1.0);
+    vec4 ndc = shadow_projection * vec4(position, 1.0);
+    if (-1 <= ndc.x && ndc.x <= 1 && -1 <= ndc.y && ndc.y <= 1) {
+        vec2 shadow_coord = ndc.xy * 0.5 + vec2(0.5);
+        float shadow_depth = ndc.z * 0.5 + 0.5;
+        if (texture(shadow_map, shadow_coord).r < shadow_depth) {
+            vec3 color = albedo * ambient_light;
+            out_color = vec4(color, 1.0);
+        } else {
+            vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
+            out_color = vec4(color, 1.0);
+        }
+    } else {
+        vec3 color = albedo * ambient_light + sun_color * phong(sun_direction);
+        out_color = vec4(color, 1.0);
+    }
+
 }
 )";
 
@@ -115,7 +131,7 @@ uniform sampler2D shadow_map;
 
 void main()
 {
-    out_color = texture(shadow_map, texcoord);
+    out_color = vec4(texture(shadow_map, texcoord).x, texture(shadow_map, texcoord).x, texture(shadow_map, texcoord).x, texture(shadow_map, texcoord).x);
 }
 )";
 
@@ -265,6 +281,7 @@ try
 
     GLuint shadow_model_location = glGetUniformLocation(shadow_map_program, "model");
     GLuint shadow_projection_location = glGetUniformLocation(shadow_map_program, "shadow_projection");
+    GLuint shadow_projection_for_main_location = glGetUniformLocation(program, "shadow_projection");
 
 
     GLuint model_location = glGetUniformLocation(program, "model");
@@ -274,6 +291,7 @@ try
     GLuint albedo_location = glGetUniformLocation(program, "albedo");
     GLuint sun_direction_location = glGetUniformLocation(program, "sun_direction");
     GLuint sun_color_location = glGetUniformLocation(program, "sun_color");
+    GLuint shadow_map_location = glGetUniformLocation(program, "shadow_map");
 
     std::string project_root = PROJECT_ROOT;
     std::string scene_path = project_root + "/buddha.obj";
@@ -401,8 +419,25 @@ try
 
         glm::vec3 sun_direction = glm::normalize(glm::vec3(std::sin(time * 0.5f), 2.f, std::cos(time * 0.5f)));
 
-        glUseProgram(program);
+        // drawing shadow map
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        glUseProgram(shadow_map_program);
+        glViewport(0, 0, shadow_map_size, shadow_map_size);
+        glCullFace(GL_FRONT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST); // might be wrong; if something does not work -- recheck!
+        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        glUniformMatrix4fv(shadow_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
+        glBindVertexArray(scene_vao);
+        glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
 
+        // draw the scene
+        glUseProgram(program);
+        glViewport(0, 0, width, height);
+        glCullFace(GL_BACK);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glUniformMatrix4fv(shadow_projection_for_main_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
@@ -414,22 +449,15 @@ try
         glBindVertexArray(scene_vao);
         glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
 
-        // drawing shadow map
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-        glUseProgram(shadow_map_program);
-        glViewport(0, 0, shadow_map_size, shadow_map_size);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST); // might be wrong; if something does not work -- recheck!
-        glUniformMatrix4fv(shadow_model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
-        glUniformMatrix4fv(shadow_projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&shadow_projection));
-        glBindVertexArray(scene_vao);
-        glDrawElements(GL_TRIANGLES, scene.indices.size(), GL_UNSIGNED_INT, nullptr);
-
+        // drawing debug rectangle
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glUseProgram(debug_program);
         glBindVertexArray(debug_vao);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
+        std::vector<char> buffer(shadow_map_size * shadow_map_size * 10);
+        glBindTexture(GL_TEXTURE_2D, shadow_map_texture);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, buffer.data());
 
         SDL_GL_SwapWindow(window);
     }
