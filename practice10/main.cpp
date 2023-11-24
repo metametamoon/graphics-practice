@@ -42,6 +42,55 @@ void glew_fail(std::string_view message, GLenum error)
     throw std::runtime_error(to_string(message) + reinterpret_cast<const char *>(glewGetErrorString(error)));
 }
 
+const char bg_fragment_source[] =
+        R"(#version 330 core
+
+layout (location = 0) out vec4 out_color;
+
+uniform vec3 camera_position;
+uniform sampler2D environment_texture;
+
+const float PI = 3.141592653589793;
+
+in vec3 pos;
+void main()
+{
+    vec3 dir =  normalize(pos - camera_position);
+    float x = atan(dir.z, dir.x) / PI * 0.5 + 0.5;
+    float y = -atan(dir.y, length(dir.xz)) / PI + 0.5;
+    vec3 env = texture(environment_texture, vec2(x, y)).rgb;
+    out_color = vec4(env, 1.0);
+}
+)";
+
+const char bg_vertex_source[] =
+        R"(#version 330 core
+
+const vec2 VERTICES[6] = vec2[6](
+    vec2(-1.0, -1.0),
+    vec2(1.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, -1.0),
+    vec2(1.0, -1.0),
+    vec2(1.0, 1.0)
+);
+
+uniform mat4 view_projection_inverse;
+
+out vec3 color;
+
+out vec3 pos;
+void main()
+{
+    gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+    vec4 ndc = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+    vec4 clip_space = view_projection_inverse * ndc;
+    pos = clip_space.xyz / clip_space.w;
+}
+)";
+
+
+
 const char vertex_shader_source[] =
 R"(#version 330 core
 
@@ -76,6 +125,8 @@ uniform vec3 light_direction;
 uniform vec3 camera_position;
 
 uniform sampler2D albedo_texture;
+uniform sampler2D normal_texture;
+uniform sampler2D environment_texture;
 
 in vec3 position;
 in vec3 tangent;
@@ -90,11 +141,22 @@ void main()
 {
     float ambient_light = 0.2;
 
-    float lightness = ambient_light + max(0.0, dot(normalize(normal), light_direction));
+    vec3 bitangent = cross(tangent, normal);
+    mat3 tbn = mat3(tangent, bitangent, normal);
+    vec3 real_normal = tbn * (texture(normal_texture, texcoord).xyz * 2.0 - vec3(1.0));
 
+
+    float lightness = ambient_light + max(0.0, dot(normalize(real_normal), light_direction));
+
+    vec3 eye_dir = position - camera_position;
+    vec3 normalized_norm = normalize(real_normal);
+    vec3 dir = eye_dir - normalized_norm * dot(eye_dir, normalized_norm);
+    float x = atan(dir.z, dir.x) / PI * 0.5 + 0.5;
+    float y = -atan(dir.y, length(dir.xz)) / PI + 0.5;
+    vec3 env = texture(environment_texture, vec2(x, y)).rgb;
     vec3 albedo = texture(albedo_texture, texcoord).rgb;
 
-    out_color = vec4(lightness * albedo, 1.0);
+    out_color = vec4(lightness * 0.5 * (env + albedo), 1.0);
 }
 )";
 
@@ -245,12 +307,25 @@ int main() try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
+    auto bg_vertex_shader = create_shader(GL_VERTEX_SHADER, bg_vertex_source);
+    auto bg_fragment_shader = create_shader(GL_FRAGMENT_SHADER, bg_fragment_source);
+    auto bg_program = create_program(bg_vertex_shader, bg_fragment_shader);
+    GLuint bg_vao;
+    glGenVertexArrays(1, &bg_vao);
+
     GLuint model_location = glGetUniformLocation(program, "model");
     GLuint view_location = glGetUniformLocation(program, "view");
     GLuint projection_location = glGetUniformLocation(program, "projection");
     GLuint light_direction_location = glGetUniformLocation(program, "light_direction");
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
     GLuint albedo_texture_location = glGetUniformLocation(program, "albedo_texture");
+    GLuint normal_texture_location = glGetUniformLocation(program, "normal_texture");
+    GLuint environment_texture_location = glGetUniformLocation(program, "environment_texture");
+
+    GLuint bg_camera_position_location = glGetUniformLocation(bg_program, "camera_position");
+    GLuint bg_view_projection_inverse_location = glGetUniformLocation(bg_program, "view_projection_inverse");
+    GLuint bg_environment_texture_location = glGetUniformLocation(bg_program, "environment_texture");
+
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -280,6 +355,8 @@ int main() try
 
     std::string project_root = PROJECT_ROOT;
     GLuint albedo_texture = load_texture(project_root + "/textures/brick_albedo.jpg");
+    GLuint normal_texture = load_texture(project_root + "/textures/brick_normal.jpg");
+    GLuint environment_texture = load_texture(project_root + "/textures/environment_map.jpg");
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -358,6 +435,19 @@ int main() try
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
+        glm::mat4 tmp = glm::inverse(projection * view);
+
+
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(bg_program);
+        glActiveTexture(GL_TEXTURE0 + 2);
+        glBindTexture(GL_TEXTURE_2D, environment_texture);
+        glUniform1i(bg_environment_texture_location, 2);
+        glUniform3fv(bg_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniformMatrix4fv(bg_view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&tmp));
+        glBindVertexArray(bg_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
         glUseProgram(program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
@@ -365,12 +455,22 @@ int main() try
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(albedo_texture_location, 0);
+        glUniform1i(normal_texture_location, 1);
+        glUniform1i(environment_texture_location, 2);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, albedo_texture);
 
+        glActiveTexture(GL_TEXTURE0 + 1);
+        glBindTexture(GL_TEXTURE_2D, normal_texture);
+
+        glActiveTexture(GL_TEXTURE0 + 2);
+        glBindTexture(GL_TEXTURE_2D, environment_texture);
+
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
+
+
 
         SDL_GL_SwapWindow(window);
     }
