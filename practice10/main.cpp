@@ -76,6 +76,7 @@ uniform vec3 light_direction;
 uniform vec3 camera_position;
 
 uniform sampler2D albedo_texture;
+uniform sampler2D normal_texture;
 
 in vec3 position;
 in vec3 tangent;
@@ -90,7 +91,12 @@ void main()
 {
     float ambient_light = 0.2;
 
-    float lightness = ambient_light + max(0.0, dot(normalize(normal), light_direction));
+    vec3 bitangent = cross(tangent, normal);
+    mat3 tbn = mat3(tangent, bitangent, normal);
+    vec3 real_normal = tbn * (texture(normal_texture, texcoord).xyz * 2.0 - vec3(1.0));
+
+
+    float lightness = ambient_light + max(0.0, dot(normalize(real_normal), light_direction));
 
     vec3 albedo = texture(albedo_texture, texcoord).rgb;
 
@@ -251,6 +257,7 @@ int main() try
     GLuint light_direction_location = glGetUniformLocation(program, "light_direction");
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
     GLuint albedo_texture_location = glGetUniformLocation(program, "albedo_texture");
+    GLuint normal_texture_location = glGetUniformLocation(program, "normal_texture");
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -280,6 +287,7 @@ int main() try
 
     std::string project_root = PROJECT_ROOT;
     GLuint albedo_texture = load_texture(project_root + "/textures/brick_albedo.jpg");
+    GLuint normal_texture = load_texture(project_root + "/textures/brick_normal.jpg");
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -365,9 +373,13 @@ int main() try
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(albedo_texture_location, 0);
+        glUniform1i(normal_texture_location, 1);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, albedo_texture);
+
+        glActiveTexture(GL_TEXTURE0 + 1);
+        glBindTexture(GL_TEXTURE_2D, normal_texture);
 
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
