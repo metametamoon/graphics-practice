@@ -77,6 +77,7 @@ uniform vec3 camera_position;
 
 uniform sampler2D albedo_texture;
 uniform sampler2D normal_texture;
+uniform sampler2D environment_texture;
 
 in vec3 position;
 in vec3 tangent;
@@ -98,9 +99,15 @@ void main()
 
     float lightness = ambient_light + max(0.0, dot(normalize(real_normal), light_direction));
 
+    vec3 eye_dir = position - camera_position;
+    vec3 normalized_norm = normalize(real_normal);
+    vec3 dir = eye_dir - normalized_norm * dot(eye_dir, normalized_norm);
+    float x = atan(dir.z, dir.x) / PI * 0.5 + 0.5;
+    float y = -atan(dir.y, length(dir.xz)) / PI + 0.5;
+    vec3 env = texture(environment_texture, vec2(x, y)).rgb;
     vec3 albedo = texture(albedo_texture, texcoord).rgb;
 
-    out_color = vec4(lightness * albedo, 1.0);
+    out_color = vec4(lightness * 0.5 * (env + albedo), 1.0);
 }
 )";
 
@@ -258,6 +265,7 @@ int main() try
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
     GLuint albedo_texture_location = glGetUniformLocation(program, "albedo_texture");
     GLuint normal_texture_location = glGetUniformLocation(program, "normal_texture");
+    GLuint environment_texture_location = glGetUniformLocation(program, "environment_texture");
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -288,6 +296,7 @@ int main() try
     std::string project_root = PROJECT_ROOT;
     GLuint albedo_texture = load_texture(project_root + "/textures/brick_albedo.jpg");
     GLuint normal_texture = load_texture(project_root + "/textures/brick_normal.jpg");
+    GLuint environment_texture = load_texture(project_root + "/textures/environment_map.jpg");
 
     auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -374,12 +383,16 @@ int main() try
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
         glUniform1i(albedo_texture_location, 0);
         glUniform1i(normal_texture_location, 1);
+        glUniform1i(environment_texture_location, 2);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, albedo_texture);
 
         glActiveTexture(GL_TEXTURE0 + 1);
         glBindTexture(GL_TEXTURE_2D, normal_texture);
+
+        glActiveTexture(GL_TEXTURE0 + 2);
+        glBindTexture(GL_TEXTURE_2D, environment_texture);
 
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
