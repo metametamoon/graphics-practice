@@ -42,6 +42,55 @@ void glew_fail(std::string_view message, GLenum error)
     throw std::runtime_error(to_string(message) + reinterpret_cast<const char *>(glewGetErrorString(error)));
 }
 
+const char bg_fragment_source[] =
+        R"(#version 330 core
+
+layout (location = 0) out vec4 out_color;
+
+uniform vec3 camera_position;
+uniform sampler2D environment_texture;
+
+const float PI = 3.141592653589793;
+
+in vec3 pos;
+void main()
+{
+    vec3 dir =  normalize(pos - camera_position);
+    float x = atan(dir.z, dir.x) / PI * 0.5 + 0.5;
+    float y = -atan(dir.y, length(dir.xz)) / PI + 0.5;
+    vec3 env = texture(environment_texture, vec2(x, y)).rgb;
+    out_color = vec4(env, 1.0);
+}
+)";
+
+const char bg_vertex_source[] =
+        R"(#version 330 core
+
+const vec2 VERTICES[6] = vec2[6](
+    vec2(-1.0, -1.0),
+    vec2(1.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, -1.0),
+    vec2(1.0, -1.0),
+    vec2(1.0, 1.0)
+);
+
+uniform mat4 view_projection_inverse;
+
+out vec3 color;
+
+out vec3 pos;
+void main()
+{
+    gl_Position = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+    vec4 ndc = vec4(VERTICES[gl_VertexID], 0.0, 1.0);
+    vec4 clip_space = view_projection_inverse * ndc;
+    pos = clip_space.xyz / clip_space.w;
+}
+)";
+
+
+
 const char vertex_shader_source[] =
 R"(#version 330 core
 
@@ -258,6 +307,12 @@ int main() try
     auto fragment_shader = create_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
     auto program = create_program(vertex_shader, fragment_shader);
 
+    auto bg_vertex_shader = create_shader(GL_VERTEX_SHADER, bg_vertex_source);
+    auto bg_fragment_shader = create_shader(GL_FRAGMENT_SHADER, bg_fragment_source);
+    auto bg_program = create_program(bg_vertex_shader, bg_fragment_shader);
+    GLuint bg_vao;
+    glGenVertexArrays(1, &bg_vao);
+
     GLuint model_location = glGetUniformLocation(program, "model");
     GLuint view_location = glGetUniformLocation(program, "view");
     GLuint projection_location = glGetUniformLocation(program, "projection");
@@ -266,6 +321,11 @@ int main() try
     GLuint albedo_texture_location = glGetUniformLocation(program, "albedo_texture");
     GLuint normal_texture_location = glGetUniformLocation(program, "normal_texture");
     GLuint environment_texture_location = glGetUniformLocation(program, "environment_texture");
+
+    GLuint bg_camera_position_location = glGetUniformLocation(bg_program, "camera_position");
+    GLuint bg_view_projection_inverse_location = glGetUniformLocation(bg_program, "view_projection_inverse");
+    GLuint bg_environment_texture_location = glGetUniformLocation(bg_program, "environment_texture");
+
 
     GLuint sphere_vao, sphere_vbo, sphere_ebo;
     glGenVertexArrays(1, &sphere_vao);
@@ -375,6 +435,19 @@ int main() try
 
         glm::vec3 camera_position = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
 
+        glm::mat4 tmp = glm::inverse(projection * view);
+
+
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(bg_program);
+        glActiveTexture(GL_TEXTURE0 + 2);
+        glBindTexture(GL_TEXTURE_2D, environment_texture);
+        glUniform1i(bg_environment_texture_location, 2);
+        glUniform3fv(bg_camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glUniformMatrix4fv(bg_view_projection_inverse_location, 1, GL_FALSE, reinterpret_cast<float *>(&tmp));
+        glBindVertexArray(bg_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
         glUseProgram(program);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
@@ -396,6 +469,8 @@ int main() try
 
         glBindVertexArray(sphere_vao);
         glDrawElements(GL_TRIANGLES, sphere_index_count, GL_UNSIGNED_INT, nullptr);
+
+
 
         SDL_GL_SwapWindow(window);
     }
