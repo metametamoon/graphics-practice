@@ -121,9 +121,12 @@ layout (location = 0) out vec4 out_color;
 
 in vec2 texcoord;
 uniform sampler2D particle_texture;
+uniform sampler1D color_texture;
 void main()
 {
-    out_color = vec4(1.0, 0.0, 0.0, texture(particle_texture, texcoord).r);
+    out_color = texture(color_texture, texture(particle_texture, texcoord).r);
+    out_color.a =  texture(particle_texture, texcoord).r;
+    // out_color = vec4(1.0, 0.0, 0.0, texture(particle_texture, texcoord).r);
     //out_color = vec4(texcoord, 0.0, 1.0);
 }
 )";
@@ -240,6 +243,7 @@ int main() try
     GLuint projection_location = glGetUniformLocation(program, "projection");
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
     GLuint particle_texture_location = glGetUniformLocation(program, "particle_texture");
+    GLuint color_texture_location = glGetUniformLocation(program, "color_texture");
 
     std::default_random_engine rng;
 
@@ -275,6 +279,21 @@ int main() try
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glGenerateMipmap(GL_TEXTURE_2D);
+
+    std::vector<glm::vec4> colors{
+            glm::vec4(1.f, 0.f, 0.f, 1.f),
+            glm::vec4(1.f, 1.f, 0.f, 1.f), // yellow
+            glm::vec4(1.f, 0.5f, 0.f, 1.f), // orange
+    };
+
+    GLuint color_texture;
+    glGenTextures(1, &color_texture);
+    glBindTexture(GL_TEXTURE_1D, color_texture);
+    glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA8, 3, 0, GL_RGBA, GL_FLOAT, colors.data());
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_1D);
+
 
     glPointSize(5.f);
 
@@ -389,6 +408,10 @@ int main() try
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, particle_texture);
         glUniform1i(particle_texture_location, 1);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_1D, color_texture);
+        glUniform1i(color_texture_location, 2);
 
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particles.size());
