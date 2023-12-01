@@ -175,6 +175,20 @@ struct particle
     glm::vec3 velocity;
 };
 
+particle create_random_particle(std::default_random_engine& rng) {
+    particle p;
+    p.size = std::uniform_real_distribution<float>{.2f, .4f}(rng);
+    p.position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+    p.position.y = 0.f;
+    p.position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+    p.velocity = glm::vec3(
+            std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
+            std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
+            std::uniform_real_distribution<float>{-4.f, 4.f}(rng));
+    p.rotation_speed = std::uniform_real_distribution<float>{-4.f, 4.f}(rng);
+    return p;
+}
+
 int main() try
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -225,22 +239,7 @@ int main() try
 
     std::default_random_engine rng;
 
-    std::vector<particle> particles(256);
-    for (auto& particle: particles) {
-        particle.size = std::uniform_real_distribution<float>{0.2f, 0.4f}(rng);;
-    }
-
-    for (auto & p : particles)
-    {
-        p.position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
-        p.position.y = 0.f;
-        p.position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
-        p.velocity = glm::vec3(
-                std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
-                std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
-                std::uniform_real_distribution<float>{-4.f, 4.f}(rng));
-        p.rotation_speed = std::uniform_real_distribution<float>{-4.f, 4.f}(rng);
-    }
+    std::vector<particle> particles(0);
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao);
@@ -326,9 +325,18 @@ int main() try
         glEnable(GL_DEPTH_TEST);
 
         if (!paused) {
+            if (particles.size() < 100) {
+                particles.push_back(create_random_particle(rng));
+            }
+
             float A = 0.05f;
             float C = 0.02f;
             for (auto& particle: particles) {
+                if (particle.position.y > 5 || particle.position.y < -5) {
+                    particle = create_random_particle(rng);
+                    std::cout << "Created random particle!" << std::endl;
+                    std::cout << "x, y = " << particle.position.x << ", " << particle.position.y  << std::endl;
+                }
                 particle.velocity.y += A * dt;
                 particle.velocity *= exp(-C * dt);
                 particle.position += particle.velocity * dt;
