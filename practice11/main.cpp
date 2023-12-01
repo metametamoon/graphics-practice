@@ -99,15 +99,15 @@ void main()
     EmitVertex();
 
     gl_Position = projection * view * model * vec4(center - size0 * x_dir + size0 * y_dir, 1.0);
-    texcoord = vec2(0.0, 1.0);
+    texcoord = vec2(0.0, 0.25); // but why?
     EmitVertex();
 
     gl_Position = projection * view * model * vec4(center + size0 * x_dir - size0 * y_dir, 1.0);
-    texcoord = vec2(1.0, 0.0);
+    texcoord = vec2(0.25, 0.0);
     EmitVertex();
 
     gl_Position = projection * view * model * vec4(center + size0 * x_dir + size0 * y_dir, 1.0);
-    texcoord = vec2(1.0, 1.0);
+    texcoord = vec2(0.25, 0.25);
     EmitVertex();
     EndPrimitive();
 }
@@ -120,10 +120,11 @@ R"(#version 330 core
 layout (location = 0) out vec4 out_color;
 
 in vec2 texcoord;
-
+uniform sampler2D particle_texture;
 void main()
 {
-    out_color = vec4(texcoord, 0.0, 1.0);
+    out_color = vec4(1.0, 0.0, 0.0, texture(particle_texture, texcoord).r);
+    //out_color = vec4(texcoord, 0.0, 1.0);
 }
 )";
 
@@ -181,11 +182,13 @@ particle create_random_particle(std::default_random_engine& rng) {
     p.position.x = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
     p.position.y = 0.f;
     p.position.z = std::uniform_real_distribution<float>{-1.f, 1.f}(rng);
+    float speed_range = 0.2f;
     p.velocity = glm::vec3(
-            std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
-            std::uniform_real_distribution<float>{-4.f, 4.f}(rng),
-            std::uniform_real_distribution<float>{-4.f, 4.f}(rng));
-    p.rotation_speed = std::uniform_real_distribution<float>{-4.f, 4.f}(rng);
+            std::uniform_real_distribution<float>{-speed_range, speed_range}(rng),
+            std::uniform_real_distribution<float>{-speed_range, speed_range}(rng),
+            std::uniform_real_distribution<float>{-speed_range, speed_range}(rng));
+    p.rotation_speed = 0.f; //std::uniform_real_distribution<float>{-4.f, 4.f}(rng);
+    p.rotation_angle = 0.f;
     return p;
 }
 
@@ -236,6 +239,7 @@ int main() try
     GLuint view_location = glGetUniformLocation(program, "view");
     GLuint projection_location = glGetUniformLocation(program, "projection");
     GLuint camera_position_location = glGetUniformLocation(program, "camera_position");
+    GLuint particle_texture_location = glGetUniformLocation(program, "particle_texture");
 
     std::default_random_engine rng;
 
@@ -259,6 +263,18 @@ int main() try
 
     const std::string project_root = PROJECT_ROOT;
     const std::string particle_texture_path = project_root + "/particle.png";
+
+    GLuint particle_texture;
+    glGenTextures(1, &particle_texture);
+    glBindTexture(GL_TEXTURE_2D, particle_texture);
+
+    int x, y, channels;
+    auto* data = stbi_load(particle_texture_path.c_str(), &x, &y, &channels, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D);
 
     glPointSize(5.f);
 
@@ -322,19 +338,22 @@ int main() try
             camera_rotation += 3.f * dt;
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glDisable(GL_DEPTH_TEST);
+
 
         if (!paused) {
-            if (particles.size() < 100) {
+            if (particles.size() < 200) {
                 particles.push_back(create_random_particle(rng));
             }
 
             float A = 0.05f;
             float C = 0.02f;
             for (auto& particle: particles) {
-                if (particle.position.y > 5 || particle.position.y < -5) {
+                if (glm::length(particle.position) > 3) {
                     particle = create_random_particle(rng);
-                    std::cout << "Created random particle!" << std::endl;
+                    std::cout << "Replaced random particle!" << std::endl;
                     std::cout << "x, y = " << particle.position.x << ", " << particle.position.y  << std::endl;
                 }
                 particle.velocity.y += A * dt;
@@ -367,6 +386,9 @@ int main() try
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(camera_position_location, 1, reinterpret_cast<float *>(&camera_position));
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, particle_texture);
+        glUniform1i(particle_texture_location, 1);
 
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particles.size());
