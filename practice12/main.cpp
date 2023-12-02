@@ -115,6 +115,8 @@ uniform sampler3D cloud_texture;
 
 void main()
 {
+    vec3 light_color = vec3(1.0, 0.0, 0.0);
+    float scattering = 20.0;
     float absorption = 1.0;
     vec3 dir = normalize(position - camera_position);
     vec2 tmp = intersect_bbox(camera_position, dir);
@@ -123,15 +125,35 @@ void main()
     vec3 p = camera_position + dir * (tmin + tmax) / 2.0;
     float dt = (tmax - tmin) / 64;
     float optical_depth = 0.0;
+    vec3 color = vec3(0.0);
     for (int i = 0; i < 64; ++i) {
         float t = tmin + (i + 0.5) * dt;
         vec3 p = camera_position + dir * t;
+
+        // light_optical_depth
+        vec3 light_dir = normalize(light_direction);
+        vec2 tmp2 = intersect_bbox(p, light_dir);
+        float light_tmax = tmp2.y;
+        float light_tmin = max(0.0, tmp2.x);
+        float light_optical_depth = 0.0;
+        float light_dt = (light_tmax - light_tmin) / 16;
+        for (int j = 0; j < 16; ++j) {
+            float t_light = light_tmin + (j + 0.5) * light_dt;
+            vec3 p_light = p + light_dir * t_light;
+            vec3 light_texcoord = (p_light - bbox_min) / (bbox_max - bbox_min);
+            float light_density =  texture(cloud_texture, light_texcoord).r;
+            light_optical_depth += absorption * light_density * light_dt;
+        }
+
+
+
         vec3 texcoord = (p - bbox_min) / (bbox_max - bbox_min);
         float density =  texture(cloud_texture, texcoord).r;
         optical_depth += absorption * density * dt;
+        color += light_color * exp(-light_optical_depth) * exp(-optical_depth) * dt * density * scattering / 4.0 / PI;
     }
     float opacity = 1 - exp(-optical_depth);
-    out_color = vec4(vec3(0.0), opacity);
+    out_color = vec4(color, opacity);
 }
 )";
 
