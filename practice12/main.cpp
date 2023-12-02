@@ -116,16 +116,22 @@ uniform sampler3D cloud_texture;
 void main()
 {
     float absorption = 1.0;
-    vec3 dir = normalize(camera_position - position);
-    vec2 tmp = intersect_bbox(position, dir);
+    vec3 dir = normalize(position - camera_position);
+    vec2 tmp = intersect_bbox(camera_position, dir);
     float tmax = tmp.y;
     float tmin = max(0.0, tmp.x);
-    float optical_depth = (tmax - tmin) * absorption;
-    float opacity = 1.0 - exp(-optical_depth);
     vec3 p = camera_position + dir * (tmin + tmax) / 2.0;
-    vec3 texcoord = (p - bbox_min) / (bbox_max - bbox_min);
-    if (p.x > bbox_max.x || p.y > bbox_max.y || p.z > bbox_max.z) { discard; }
-    out_color = vec4(vec3(texture(cloud_texture, texcoord).r), 1.0);
+    float dt = (tmax - tmin) / 64;
+    float optical_depth = 0.0;
+    for (int i = 0; i < 64; ++i) {
+        float t = tmin + (i + 0.5) * dt;
+        vec3 p = camera_position + dir * t;
+        vec3 texcoord = (p - bbox_min) / (bbox_max - bbox_min);
+        float density =  texture(cloud_texture, texcoord).r;
+        optical_depth += absorption * density * dt;
+    }
+    float opacity = 1 - exp(-optical_depth);
+    out_color = vec4(vec3(0.0), opacity);
 }
 )";
 
