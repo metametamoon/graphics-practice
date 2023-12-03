@@ -115,9 +115,10 @@ uniform sampler3D cloud_texture;
 
 void main()
 {
-    vec3 light_color = vec3(1.0, 1.0, 1.0);
-    vec3 scattering = vec3(3, 10.0, 1.0);
+    vec3 light_color = vec3(16.0);
+    vec3 scattering = vec3(4.0);
     vec3 absorption = vec3(1.0);
+    vec3 extinction = absorption + scattering;
     vec3 dir = normalize(position - camera_position);
     vec2 tmp = intersect_bbox(camera_position, dir);
     float tmax = tmp.y;
@@ -149,11 +150,11 @@ void main()
 
         vec3 texcoord = (p - bbox_min) / (bbox_max - bbox_min);
         float density =  texture(cloud_texture, texcoord).r;
-        optical_depth += absorption * density * dt;
+        optical_depth += extinction * density * dt;
         color += light_color * exp(-light_optical_depth) * exp(-optical_depth) * dt * density * scattering / 4.0 / PI;
     }
     vec3 opacity = 1 - exp(-optical_depth);
-    out_color = vec4(color, opacity.x);
+    out_color = vec4(color, opacity);
 }
 )";
 
@@ -378,7 +379,7 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
-        glClearColor(0.0f, 0.0f, 0.0f, 0.f);
+        glClearColor(0.8f, 0.8f, 0.9f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glEnable(GL_DEPTH_TEST);
@@ -406,6 +407,9 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(std::cos(time), 1.f, std::sin(time)));
 
         glUseProgram(program);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(bbox_min_location, 1, reinterpret_cast<const float *>(&cloud_bbox_min));
