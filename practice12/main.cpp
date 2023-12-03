@@ -116,7 +116,7 @@ uniform sampler3D cloud_texture;
 void main()
 {
     vec3 light_color = vec3(16.0);
-    vec3 scattering = vec3(4.0);
+    vec3 scattering = vec3(10.0, 1.0, 6.0);
     vec3 absorption = vec3(1.0);
     vec3 extinction = absorption + scattering;
     vec3 dir = normalize(position - camera_position);
@@ -143,7 +143,7 @@ void main()
             vec3 p_light = p + light_dir * t_light;
             vec3 light_texcoord = (p_light - bbox_min) / (bbox_max - bbox_min);
             float light_density =  texture(cloud_texture, light_texcoord).r;
-            light_optical_depth += absorption * light_density * light_dt;
+            light_optical_depth += extinction * light_density * light_dt;
         }
 
 
@@ -154,7 +154,7 @@ void main()
         color += light_color * exp(-light_optical_depth) * exp(-optical_depth) * dt * density * scattering / 4.0 / PI;
     }
     vec3 opacity = 1 - exp(-optical_depth);
-    out_color = vec4(color, opacity);
+    out_color = vec4(color * opacity, 1.0);
 }
 )";
 
@@ -379,7 +379,7 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
-        glClearColor(0.8f, 0.8f, 0.9f, 0.f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glEnable(GL_DEPTH_TEST);
