@@ -340,11 +340,11 @@ int main() try
 
         std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(scale));
         for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
-            auto translation = run_animation.bones[i].translation(0.f);
+            auto translation = run_animation.bones[i].translation(std::fmod(time, run_animation.max_time));
             auto translation_matrix = glm::translate(glm::mat4(1.f), translation);
-            auto scale = run_animation.bones[i].scale(0.f);
+            auto scale = run_animation.bones[i].scale(std::fmod(time, run_animation.max_time));
             auto scale_matrix = glm::scale(glm::mat4(1.f), scale);
-            auto rotation_matrix = glm::toMat4(run_animation.bones[i].rotation(0.f));
+            auto rotation_matrix = glm::toMat4(run_animation.bones[i].rotation(std::fmod(time, run_animation.max_time)));
 
             glm::mat4 transform = translation_matrix * rotation_matrix * scale_matrix;
             if (input_model.bones[i].parent != (unsigned)-1)  {
