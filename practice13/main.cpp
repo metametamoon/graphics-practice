@@ -52,6 +52,8 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
+uniform mat4x3 bones[64];
+
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 layout (location = 2) in vec2 in_texcoord;
@@ -65,7 +67,11 @@ out vec4 weights;
 
 void main()
 {
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    mat4x3 average = (in_weights.x * bones[in_joints.x]
+        + in_weights.y * bones[in_joints.y]
+        + in_weights.z * bones[in_joints.z]
+        + in_weights.w * bones[in_joints.w]);
+    gl_Position = projection * view * model * mat4(average) * vec4(in_position, 1.0);
     normal = mat3(model) * in_normal;
     texcoord = in_texcoord;
     weights = in_weights;
@@ -95,8 +101,6 @@ void main()
         albedo_color = texture(albedo, texcoord);
     else
         albedo_color = color;
-
-    albedo_color = weights;
 
     float ambient = 0.4;
     float diffuse = max(0.0, dot(normalize(normal), light_direction));
@@ -193,6 +197,7 @@ int main() try
     GLuint color_location = glGetUniformLocation(program, "color");
     GLuint use_texture_location = glGetUniformLocation(program, "use_texture");
     GLuint light_direction_location = glGetUniformLocation(program, "light_direction");
+    GLuint bones_location = glGetUniformLocation(program, "bones");
 
     const std::string project_root = PROJECT_ROOT;
     const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
@@ -329,6 +334,9 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
+        float scale = 0.75f + cos(time) * 0.25f;
+
+        std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(scale));
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -388,7 +396,8 @@ int main() try
                 }
                 else
                     continue;
-
+                glUniformMatrix4x3fv(bones_location, bones.size(), false,
+                                     reinterpret_cast<const GLfloat*>(bones.data()));
                 glBindVertexArray(mesh.vao);
                 glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
             }
