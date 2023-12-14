@@ -203,6 +203,8 @@ int main() try
     const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
     auto const input_model = load_gltf(model_path);
+    float in_running_state = 0.5;
+    auto const walk_animation = input_model.animations.at("02_walk");
     auto const run_animation = input_model.animations.at("01_Run");
 
     GLuint vbo;
@@ -336,15 +338,32 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
+        float speed = 0.2;
+        if (button_down[SDLK_LSHIFT])
+            in_running_state += speed * dt;
+        else
+            in_running_state -= speed * dt;
+        in_running_state = std::clamp(in_running_state, 0.f, 1.f);
+
         float scale = 0.75f + cos(time) * 0.25f;
 
         std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(scale));
         for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
-            auto translation = run_animation.bones[i].translation(std::fmod(time, run_animation.max_time));
+            auto translation = glm::lerp(
+                    run_animation.bones[i].translation(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].translation(std::fmod(time, walk_animation.max_time)),
+                    in_running_state);
             auto translation_matrix = glm::translate(glm::mat4(1.f), translation);
-            auto scale = run_animation.bones[i].scale(std::fmod(time, run_animation.max_time));
+            auto scale = glm::lerp(
+                    run_animation.bones[i].scale(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].scale(std::fmod(time, walk_animation.max_time)),
+                    in_running_state);
             auto scale_matrix = glm::scale(glm::mat4(1.f), scale);
-            auto rotation_matrix = glm::toMat4(run_animation.bones[i].rotation(std::fmod(time, run_animation.max_time)));
+            auto rotation_matrix = glm::toMat4(glm::slerp(
+                    run_animation.bones[i].rotation(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].rotation(std::fmod(time, walk_animation.max_time)),
+                    in_running_state
+            ));
 
             glm::mat4 transform = translation_matrix * rotation_matrix * scale_matrix;
             if (input_model.bones[i].parent != (unsigned)-1)  {
