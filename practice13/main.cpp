@@ -203,6 +203,8 @@ int main() try
     const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
     auto const input_model = load_gltf(model_path);
+    auto const run_animation = input_model.animations.at("01_Run");
+
     GLuint vbo;
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -337,6 +339,22 @@ int main() try
         float scale = 0.75f + cos(time) * 0.25f;
 
         std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(scale));
+        for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
+            auto translation = run_animation.bones[i].translation(0.f);
+            auto translation_matrix = glm::translate(glm::mat4(1.f), translation);
+            auto scale = run_animation.bones[i].scale(0.f);
+            auto scale_matrix = glm::scale(glm::mat4(1.f), scale);
+            auto rotation_matrix = glm::toMat4(run_animation.bones[i].rotation(0.f));
+
+            glm::mat4 transform = translation_matrix * rotation_matrix * scale_matrix;
+            if (input_model.bones[i].parent != (unsigned)-1)  {
+                transform =  glm::mat4(bones[input_model.bones[i].parent]) * transform;
+            }
+            bones[i] = transform;
+        }
+        for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
+            bones[i] = bones[i] * input_model.bones[i].inverse_bind_matrix;
+        }
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
