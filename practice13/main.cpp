@@ -52,18 +52,29 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
+uniform mat4x3 bones[64];
+
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 layout (location = 2) in vec2 in_texcoord;
+layout (location = 3) in ivec4 in_joints;
+layout (location = 4) in vec4 in_weights;
+
 
 out vec3 normal;
 out vec2 texcoord;
+out vec4 weights;
 
 void main()
 {
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    mat4x3 average = (in_weights.x * bones[in_joints.x]
+        + in_weights.y * bones[in_joints.y]
+        + in_weights.z * bones[in_joints.z]
+        + in_weights.w * bones[in_joints.w]);
+    gl_Position = projection * view * model * mat4(average) * vec4(in_position, 1.0);
     normal = mat3(model) * in_normal;
     texcoord = in_texcoord;
+    weights = in_weights;
 }
 )";
 
@@ -80,6 +91,7 @@ layout (location = 0) out vec4 out_color;
 
 in vec3 normal;
 in vec2 texcoord;
+in vec4 weights;
 
 void main()
 {
@@ -185,11 +197,16 @@ int main() try
     GLuint color_location = glGetUniformLocation(program, "color");
     GLuint use_texture_location = glGetUniformLocation(program, "use_texture");
     GLuint light_direction_location = glGetUniformLocation(program, "light_direction");
+    GLuint bones_location = glGetUniformLocation(program, "bones");
 
     const std::string project_root = PROJECT_ROOT;
     const std::string model_path = project_root + "/wolf/Wolf-Blender-2.82a.gltf";
 
     auto const input_model = load_gltf(model_path);
+    float in_running_state = 0.5;
+    auto const walk_animation = input_model.animations.at("02_walk");
+    auto const run_animation = input_model.animations.at("01_Run");
+
     GLuint vbo;
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -321,6 +338,42 @@ int main() try
         if (button_down[SDLK_s])
             view_angle += 2.f * dt;
 
+        float speed = 0.2;
+        if (button_down[SDLK_LSHIFT])
+            in_running_state += speed * dt;
+        else
+            in_running_state -= speed * dt;
+        in_running_state = std::clamp(in_running_state, 0.f, 1.f);
+
+        float scale = 0.75f + cos(time) * 0.25f;
+
+        std::vector<glm::mat4x3> bones(input_model.bones.size(), glm::mat4x3(scale));
+        for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
+            auto translation = glm::lerp(
+                    run_animation.bones[i].translation(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].translation(std::fmod(time, walk_animation.max_time)),
+                    in_running_state);
+            auto translation_matrix = glm::translate(glm::mat4(1.f), translation);
+            auto scale = glm::lerp(
+                    run_animation.bones[i].scale(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].scale(std::fmod(time, walk_animation.max_time)),
+                    in_running_state);
+            auto scale_matrix = glm::scale(glm::mat4(1.f), scale);
+            auto rotation_matrix = glm::toMat4(glm::slerp(
+                    run_animation.bones[i].rotation(std::fmod(time, run_animation.max_time)),
+                    walk_animation.bones[i].rotation(std::fmod(time, walk_animation.max_time)),
+                    in_running_state
+            ));
+
+            glm::mat4 transform = translation_matrix * rotation_matrix * scale_matrix;
+            if (input_model.bones[i].parent != (unsigned)-1)  {
+                transform =  glm::mat4(bones[input_model.bones[i].parent]) * transform;
+            }
+            bones[i] = transform;
+        }
+        for (int i = 0; i < std::ssize(run_animation.bones); ++i) {
+            bones[i] = bones[i] * input_model.bones[i].inverse_bind_matrix;
+        }
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -380,7 +433,8 @@ int main() try
                 }
                 else
                     continue;
-
+                glUniformMatrix4x3fv(bones_location, bones.size(), false,
+                                     reinterpret_cast<const GLfloat*>(bones.data()));
                 glBindVertexArray(mesh.vao);
                 glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
             }
