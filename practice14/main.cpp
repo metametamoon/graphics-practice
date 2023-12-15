@@ -351,7 +351,6 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
         glUseProgram(program);
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
@@ -359,9 +358,15 @@ int main() try
         glBindTexture(GL_TEXTURE_2D, texture);
 
         {
-            auto const & mesh = input_model.meshes[0];
-            glBindVertexArray(vaos[0]);
-            glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+            for (int x = -16; x < 16; ++x) {
+                for (int z = -16; z < 16; ++z) {
+                    glm::mat4 my_model = glm::translate(model, glm::vec3((float)x, 0.f, (float)z));
+                    glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&my_model));
+                    auto const & mesh = input_model.meshes[0];
+                    glBindVertexArray(vaos[0]);
+                    glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+                }
+            }
         }
         for (int i = 0; i < std::ssize(timer_queries); ++i) {
             GLint result;
