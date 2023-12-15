@@ -242,6 +242,9 @@ int main() try
     glm::vec3 camera_position{0.f, 1.5f, 3.f};
     float camera_rotation = 0.f;
 
+    std::vector<GLuint> timer_queries;
+    std::vector<bool> is_free;
+
     bool paused = false;
 
     bool running = true;
@@ -273,6 +276,23 @@ int main() try
 
         if (!running)
             break;
+
+        GLuint current_query;
+        bool query_set = false;
+        for (int i = 0; i < std::ssize(is_free); ++i) {
+            if (is_free[i]) {
+                 is_free[i] = false;
+                 query_set = true;
+                 current_query = timer_queries[i];
+            }
+        }
+        if (!query_set) {
+            is_free.push_back(false);
+            GLuint query_id;
+            glGenQueries(1, &query_id);
+            current_query = query_id;
+            timer_queries.push_back(current_query);
+        }
 
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
@@ -306,6 +326,8 @@ int main() try
         camera_position += camera_move_forward * glm::vec3(-std::sin(camera_rotation), 0.f, std::cos(camera_rotation));
         camera_position += camera_move_sideways * glm::vec3(std::cos(camera_rotation), 0.f, std::sin(camera_rotation));
 
+
+        glBeginQuery(GL_TIME_ELAPSED, current_query);
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -341,7 +363,21 @@ int main() try
             glBindVertexArray(vaos[0]);
             glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
         }
+        for (int i = 0; i < std::ssize(timer_queries); ++i) {
+            GLint result;
+            glGetQueryObjectiv(timer_queries[i], GL_QUERY_RESULT_AVAILABLE,
+                               &result);
+            if (result == GL_TRUE) {
+                GLint time_passed;
+                glGetQueryObjectiv(timer_queries[i], GL_QUERY_RESULT, &time_passed);
+                std::cout << "[queries] time passed: " << ((float) time_passed) / 1000'000'000.f
+                    << "s\n";
+            }
+        }
+//        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
+//                  << "\n";
 
+        glEndQuery(GL_TIME_ELAPSED);
         SDL_GL_SwapWindow(window);
     }
 
