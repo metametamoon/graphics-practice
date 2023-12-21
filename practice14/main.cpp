@@ -246,19 +246,9 @@ int main() try
     std::vector<GLuint> timer_queries;
     std::vector<bool> is_free;
 
-    std::vector<glm::vec3> offsets;
-    {
-        for (int x = -16; x < 16; ++x) {
-            for (int z = -16; z < 16; ++z) {
-                offsets.push_back(glm::vec3((float)x, 0.f, (float)z));
-            }
-        }
-    }
-
     GLuint offsets_vbo;
     glGenBuffers(1, &offsets_vbo);
     glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * offsets.size(), offsets.data(), GL_STATIC_DRAW);
     for (auto vao: vaos) {
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
@@ -377,6 +367,23 @@ int main() try
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
 
+        frustum fr = frustum(projection * view);
+
+        std::vector<glm::vec3> visible_offsets;
+        for (int x = -16; x < 16; ++x) {
+            for (int z = -16; z < 16; ++z) {
+                glm::vec3 offset = glm::vec3((float) x, 0.f, (float) z);
+                aabb box = aabb(input_model.meshes[0].min + offset, input_model.meshes[0].max + offset);
+                if (intersect(fr, box)) {
+                    visible_offsets.push_back(offset);
+                }
+            }
+        }
+        std::cout << "[frustum] Visible offsets size: " << visible_offsets.size() << std::endl;
+
+        glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * visible_offsets.size(), visible_offsets.data(), GL_STATIC_DRAW);
+
         GLenum err2;
         while ((err2 = glGetError()) != GL_NO_ERROR) {
             std::cout << "OpenGL before renderinf error: " << err2 << std::endl;
@@ -390,7 +397,7 @@ int main() try
             std::cout << "OpenGL before instanced error: " << err2 << std::endl;
         }
 
-        glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset), offsets.size());
+        glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset), visible_offsets.size());
         while ((err2 = glGetError()) != GL_NO_ERROR) {
             std::cout << "OpenGL after draw instanced: " << err2 << std::endl;
         }
@@ -401,12 +408,12 @@ int main() try
             if (result == GL_TRUE) {
                 GLint time_passed;
                 glGetQueryObjectiv(timer_queries[i], GL_QUERY_RESULT, &time_passed);
-                std::cout << "[queries] time passed: " << ((float) time_passed) / 1000'000'000.f
-                    << "s\n";
+//                std::cout << "[queries] time passed: " << ((float) time_passed) / 1000'000'000.f
+//                    << "s\n";
             }
         }
-        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
-                  << "\n";
+//        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
+//                  << "\n";
 
         glEndQuery(GL_TIME_ELAPSED);
         GLenum err;
