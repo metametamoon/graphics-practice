@@ -56,13 +56,14 @@ uniform mat4 projection;
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 layout (location = 2) in vec2 in_texcoord;
+layout (location = 3) in vec3 in_offset;
 
 out vec3 normal;
 out vec2 texcoord;
 
 void main()
 {
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    gl_Position = projection * view * model * vec4(in_position + in_offset, 1.0);
     normal = mat3(model) * in_normal;
     texcoord = in_texcoord;
 }
@@ -245,6 +246,27 @@ int main() try
     std::vector<GLuint> timer_queries;
     std::vector<bool> is_free;
 
+    std::vector<glm::vec3> offsets;
+    {
+        for (int x = -16; x < 16; ++x) {
+            for (int z = -16; z < 16; ++z) {
+                offsets.push_back(glm::vec3((float)x, 0.f, (float)z));
+            }
+        }
+    }
+
+    GLuint offsets_vbo;
+    glGenBuffers(1, &offsets_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * offsets.size(), offsets.data(), GL_STATIC_DRAW);
+    for (auto vao: vaos) {
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*) 0);
+        glVertexAttribDivisor(3, 1);
+    }
+
     bool paused = false;
 
     bool running = true;
@@ -355,18 +377,22 @@ int main() try
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
 
-        glBindTexture(GL_TEXTURE_2D, texture);
+        GLenum err2;
+        while ((err2 = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL before renderinf error: " << err2 << std::endl;
+        }
 
-        {
-            for (int x = -16; x < 16; ++x) {
-                for (int z = -16; z < 16; ++z) {
-                    glm::mat4 my_model = glm::translate(model, glm::vec3((float)x, 0.f, (float)z));
-                    glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&my_model));
-                    auto const & mesh = input_model.meshes[0];
-                    glBindVertexArray(vaos[0]);
-                    glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
-                }
-            }
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        auto const & mesh = input_model.meshes[0];
+        glBindVertexArray(vaos[0]);
+        while ((err2 = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL before instanced error: " << err2 << std::endl;
+        }
+
+        glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset), offsets.size());
+        while ((err2 = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL after draw instanced: " << err2 << std::endl;
         }
         for (int i = 0; i < std::ssize(timer_queries); ++i) {
             GLint result;
@@ -379,10 +405,14 @@ int main() try
                     << "s\n";
             }
         }
-//        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
-//                  << "\n";
+        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
+                  << "\n";
 
         glEndQuery(GL_TIME_ELAPSED);
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL in the end Error: " << err << std::endl;
+        }
         SDL_GL_SwapWindow(window);
     }
 
