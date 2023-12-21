@@ -56,13 +56,14 @@ uniform mat4 projection;
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
 layout (location = 2) in vec2 in_texcoord;
+layout (location = 3) in vec3 in_offset;
 
 out vec3 normal;
 out vec2 texcoord;
 
 void main()
 {
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    gl_Position = projection * view * model * vec4(in_position + in_offset, 1.0);
     normal = mat3(model) * in_normal;
     texcoord = in_texcoord;
 }
@@ -242,6 +243,20 @@ int main() try
     glm::vec3 camera_position{0.f, 1.5f, 3.f};
     float camera_rotation = 0.f;
 
+    std::vector<GLuint> timer_queries;
+    std::vector<bool> is_free;
+
+    GLuint offsets_vbo;
+    glGenBuffers(1, &offsets_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+    for (auto vao: vaos) {
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*) 0);
+        glVertexAttribDivisor(3, 1);
+    }
+
     bool paused = false;
 
     bool running = true;
@@ -273,6 +288,23 @@ int main() try
 
         if (!running)
             break;
+
+        GLuint current_query;
+        bool query_set = false;
+        for (int i = 0; i < std::ssize(is_free); ++i) {
+            if (is_free[i]) {
+                 is_free[i] = false;
+                 query_set = true;
+                 current_query = timer_queries[i];
+            }
+        }
+        if (!query_set) {
+            is_free.push_back(false);
+            GLuint query_id;
+            glGenQueries(1, &query_id);
+            current_query = query_id;
+            timer_queries.push_back(current_query);
+        }
 
         auto now = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration_cast<std::chrono::duration<float>>(now - last_frame_start).count();
@@ -306,6 +338,8 @@ int main() try
         camera_position += camera_move_forward * glm::vec3(-std::sin(camera_rotation), 0.f, std::cos(camera_rotation));
         camera_position += camera_move_sideways * glm::vec3(std::cos(camera_rotation), 0.f, std::sin(camera_rotation));
 
+
+        glBeginQuery(GL_TIME_ELAPSED, current_query);
         glClearColor(0.8f, 0.8f, 1.f, 0.f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -329,19 +363,63 @@ int main() try
         glm::vec3 light_direction = glm::normalize(glm::vec3(1.f, 2.f, 3.f));
 
         glUseProgram(program);
-        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
         glUniformMatrix4fv(view_location, 1, GL_FALSE, reinterpret_cast<float *>(&view));
         glUniformMatrix4fv(projection_location, 1, GL_FALSE, reinterpret_cast<float *>(&projection));
         glUniform3fv(light_direction_location, 1, reinterpret_cast<float *>(&light_direction));
 
-        glBindTexture(GL_TEXTURE_2D, texture);
+        frustum fr = frustum(projection * view);
 
-        {
-            auto const & mesh = input_model.meshes[0];
-            glBindVertexArray(vaos[0]);
-            glDrawElements(GL_TRIANGLES, mesh.indices.count, mesh.indices.type, reinterpret_cast<void *>(mesh.indices.view.offset));
+        std::vector<std::vector<glm::vec3>> visible_offsets(6);
+        for (int x = -16; x < 16; ++x) {
+            for (int z = -16; z < 16; ++z) {
+                glm::vec3 offset = glm::vec3((float) x, 0.f, (float) z);
+                aabb box = aabb(input_model.meshes[0].min + offset, input_model.meshes[0].max + offset);
+                if (intersect(fr, box)) {
+                    float camera_distance = glm::length(camera_position - offset);
+                    int index = std::clamp((int) (camera_distance / 0.002f), 0, 5);
+                    visible_offsets[index].push_back(offset);
+                }
+            }
+        }
+        std::cout << "[frustum] Visible offsets size: " << visible_offsets.size() << std::endl;
+
+
+
+        GLenum err2;
+        while ((err2 = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL before renderinf error: " << err2 << std::endl;
         }
 
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glUniformMatrix4fv(model_location, 1, GL_FALSE, reinterpret_cast<float *>(&model));
+        for (int i = 0; i < 6; ++i) {
+            auto const& mesh = input_model.meshes[i];
+            glBindVertexArray(vaos[i]);
+            glBindBuffer(GL_ARRAY_BUFFER, offsets_vbo);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * visible_offsets[i].size(), visible_offsets[i].data(), GL_STATIC_DRAW);
+
+            glDrawElementsInstanced(GL_TRIANGLES, mesh.indices.count, mesh.indices.type,
+                                    reinterpret_cast<void*>(mesh.indices.view.offset), visible_offsets[i].size());
+        }
+        for (int i = 0; i < std::ssize(timer_queries); ++i) {
+            GLint result;
+            glGetQueryObjectiv(timer_queries[i], GL_QUERY_RESULT_AVAILABLE,
+                               &result);
+            if (result == GL_TRUE) {
+                GLint time_passed;
+                glGetQueryObjectiv(timer_queries[i], GL_QUERY_RESULT, &time_passed);
+//                std::cout << "[queries] time passed: " << ((float) time_passed) / 1000'000'000.f
+//                    << "s\n";
+            }
+        }
+//        std::cout << "[queries] size of buffer: " << std::ssize(timer_queries)
+//                  << "\n";
+
+        glEndQuery(GL_TIME_ELAPSED);
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cout << "OpenGL in the end Error: " << err << std::endl;
+        }
         SDL_GL_SwapWindow(window);
     }
 
